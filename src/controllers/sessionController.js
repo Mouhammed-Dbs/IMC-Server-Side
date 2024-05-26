@@ -1,13 +1,33 @@
 const jwt = require("jsonwebtoken");
 const Session = require("../models/Session");
 const Doctor = require("../models/Doctor");
+const axios = require("axios");
+const User = require("../models/User");
+
+generateQuesForFirstStage = async (idQues, typeQues) => {
+  try {
+    const res = await axios.get(
+      `${process.env.AI_SERVER_BASE_URL}generateQuesForFirstStage/${typeQues}/${idQues}`,
+      { headers: { Authorization: `Bearer ${process.env.API_KEY}` } }
+    );
+    const result = res.data;
+    if (!result.error) return result.data;
+  } catch (err) {
+    return null;
+  }
+  return null;
+};
 
 createSession = async (req, res) => {
-  const { doctorId } = req.body;
+  const { doctorId, typeQues } = req.body;
   if (!doctorId)
     return res
       .status(400)
       .json({ error: true, message: "doctorId is required!" });
+  if (!typeQues)
+    return res
+      .status(400)
+      .json({ error: true, message: "typeQues is required!" });
   const token = req.headers.authorization.split(" ")[1];
   jwt.verify(token, process.env.JWT_SECRET, async (err, decoded) => {
     if (err) {
@@ -16,7 +36,17 @@ createSession = async (req, res) => {
         message: "JWT is invalid!!".concat(err),
       });
     } else {
+      const doctors = await Doctor.find({ _id: doctorId });
+      if (doctors.length === 0)
+        return res
+          .status(400)
+          .json({ error: true, message: "doctorId is not found!" });
       const userId = decoded.userId;
+      const user = await User.findOne({ _id: userId });
+      if (!user)
+        return res
+          .status(400)
+          .json({ error: true, message: "User is not found!" });
       const sessions = await Session.find({ userId });
       let numFinished = 0;
       if (sessions.length > 0) {
@@ -27,14 +57,32 @@ createSession = async (req, res) => {
       if (numFinished === sessions.length) {
         const newSession = new Session({
           userId,
-          doctorId,
+          doctorId: "" + doctorId,
           order: sessions.length + 1,
         });
         try {
-          await newSession.save();
+          const tempMessage = await generateQuesForFirstStage(1, typeQues);
+          if (!tempMessage)
+            return res.status(500).json({
+              error: true,
+              message: "We can't generate first question!!",
+            });
+          const session = await newSession.save();
+          const user = await User.findOne({ _id: userId });
+          const message =
+            tempMessage.split("_")[0] +
+            ` ${user.name} ` +
+            tempMessage.split("_")[1];
+          session.messages.push({ sender: "ai", content: message });
+          await Session.findOneAndUpdate(
+            { _id: session._id },
+            { $set: { messages: session.messages } },
+            { new: true }
+          );
           res.status(201).json({
             error: false,
             message: "Session created!",
+            data: { sessionId: session._id },
           });
         } catch (error) {
           if (error.message.includes("duplicate key"))
@@ -47,10 +95,19 @@ createSession = async (req, res) => {
               error: true,
               message: "Invalid data!!",
             });
+          else if (
+            error.message.includes(
+              "Session validation failed: doctorId: Cast to ObjectId"
+            )
+          )
+            res.status(500).json({
+              error: true,
+              message: "doctorId is ObjectId!!",
+            });
           else
             res.status(500).json({
               error: true,
-              message: "Error!!",
+              message: "Error!!" + error,
             });
         }
       } else {
