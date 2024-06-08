@@ -150,6 +150,13 @@ addMessage = async (req, res) => {
             });
           }
           session.messages.push({ sender: "user", content: message });
+          const question = await generateQuesForFirstStage(1, typeQues);
+          if (!tempMessage)
+            return res.status(500).json({
+              error: true,
+              message: "We can't generate first question!!",
+            });
+          session.messages.push({ sender: "ai", content: question });
           const data = await Session.findOneAndUpdate(
             { _id: sessionId },
             { $set: { messages: session.messages } },
@@ -158,7 +165,11 @@ addMessage = async (req, res) => {
           return res.status(201).json({
             error: false,
             message: "Message added",
-            data: { progress: data.progress, finished: data.finished },
+            data: {
+              progress: data.progress,
+              finished: data.finished,
+              messages: session.messages,
+            },
           });
         }
         res.status(400).json({ error: true, message: "Session Not Found!!" });
