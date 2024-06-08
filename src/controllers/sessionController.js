@@ -238,6 +238,7 @@ getSession = async (req, res) => {
             error: false,
             message: "Success!",
             data: {
+              stage: session.stage,
               progress: session.progress,
               finished: session.finished,
               startTime: session.startTime,
