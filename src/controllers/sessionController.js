@@ -154,11 +154,15 @@ addMessage = async (req, res) => {
             });
           }
           session.messages.push({ sender: "user", content: message });
-          const question = await generateQuesForFirstStage(1, typeQues);
-          if (!tempMessage)
+          const prog = session.messages.filter(
+            (message) => message.sender === "ai"
+          ).length;
+
+          const question = await generateQuesForFirstStage(prog + 1, typeQues);
+          if (!question)
             return res.status(500).json({
               error: true,
-              message: "We can't generate first question!!",
+              message: "We can't generate next question!!",
             });
           session.messages.push({ sender: "ai", content: question });
           const data = await Session.findOneAndUpdate(
