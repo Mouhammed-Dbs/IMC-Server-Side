@@ -59,6 +59,7 @@ createSession = async (req, res) => {
           userId,
           doctorId: "" + doctorId,
           typeQues,
+          stage: 2.5,
           order: sessions.length + 1,
         });
         try {
