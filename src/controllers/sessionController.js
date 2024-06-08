@@ -174,12 +174,12 @@ addMessage = async (req, res) => {
                 prog === 9
                   ? {
                       messages: session.messages,
-                      progress: prog * 2.5,
+                      progress: (prog + 1) * 2.5,
                       stage: 2,
                     }
                   : {
                       messages: session.messages,
-                      progress: prog * 2.5,
+                      progress: (prog + 1) * 2.5,
                     },
             },
             { new: true }
