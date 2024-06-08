@@ -7,6 +7,7 @@ const sessionSchema = new Schema({
   order: { type: Number, required: true },
   finished: { type: Boolean, required: true, default: false },
   progress: { type: Number, required: true, default: 0 },
+  typeQues: { type: String, default: "ar" },
   messages: [
     {
       sender: { type: String, enum: ["user", "ai"], required: true },

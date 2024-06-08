@@ -58,6 +58,7 @@ createSession = async (req, res) => {
         const newSession = new Session({
           userId,
           doctorId: "" + doctorId,
+          typeQues,
           order: sessions.length + 1,
         });
         try {
@@ -123,15 +124,11 @@ createSession = async (req, res) => {
 addMessage = async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const { message, typeQues } = req.body;
+    const { message } = req.body;
     if (!message)
       return res
         .status(400)
         .json({ error: true, message: "Message is required!" });
-    if (!typeQues)
-      return res
-        .status(400)
-        .json({ error: true, message: "typeQues is required!" });
     if (!sessionId)
       return res
         .status(400)
@@ -158,7 +155,10 @@ addMessage = async (req, res) => {
             (message) => message.sender === "ai"
           ).length;
 
-          const question = await generateQuesForFirstStage(prog + 1, typeQues);
+          const question = await generateQuesForFirstStage(
+            prog + 1,
+            session.typeQues
+          );
           if (!question)
             return res.status(500).json({
               error: true,
