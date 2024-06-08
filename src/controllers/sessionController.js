@@ -123,11 +123,15 @@ createSession = async (req, res) => {
 addMessage = async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const { message } = req.body;
+    const { message, typeQues } = req.body;
     if (!message)
       return res
         .status(400)
         .json({ error: true, message: "Message is required!" });
+    if (!typeQues)
+      return res
+        .status(400)
+        .json({ error: true, message: "typeQues is required!" });
     if (!sessionId)
       return res
         .status(400)
