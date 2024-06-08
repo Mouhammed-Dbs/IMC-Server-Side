@@ -244,6 +244,7 @@ getUserSessions = async (req, res) => {
           sessions.map(async (session) => {
             let doctor = await Doctor.findById(session.doctorId);
             return {
+              id: session._id,
               order: session.order,
               doctorName: doctor.name,
               statusFinished: session.finished,
