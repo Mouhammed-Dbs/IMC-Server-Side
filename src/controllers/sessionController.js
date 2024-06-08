@@ -165,15 +165,29 @@ addMessage = async (req, res) => {
               message: "We can't generate next question!!",
             });
           session.messages.push({ sender: "ai", content: question });
+
           const data = await Session.findOneAndUpdate(
             { _id: sessionId },
-            { $set: { messages: session.messages } },
+            {
+              $set:
+                prog === 9
+                  ? {
+                      messages: session.messages,
+                      progress: prog * 2.5,
+                      stage: 2,
+                    }
+                  : {
+                      messages: session.messages,
+                      progress: prog * 2.5,
+                    },
+            },
             { new: true }
           );
           return res.status(201).json({
             error: false,
             message: "Message added",
             data: {
+              stage: data.stage,
               progress: data.progress,
               finished: data.finished,
               messages: session.messages,
