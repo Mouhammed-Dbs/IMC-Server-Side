@@ -7,12 +7,14 @@ const sessionSchema = new Schema({
   order: { type: Number, required: true },
   finished: { type: Boolean, required: true, default: false },
   progress: { type: Number, required: true, default: 0 },
+  nextForIdQue: { type: Boolean, required: true, default: false },
   typeQues: { type: String, default: "ar" },
   stage: { type: Number, required: true, default: 1 },
   messages: [
     {
-      sender: { type: String, enum: ["user", "ai"], required: true },
+      sender: { type: String, enum: ["user", "ai", "ai-base"], required: true },
       content: { type: String, required: true },
+      idQue: { type: Number, required: true },
       timestamp: { type: Date, default: Date.now() },
     },
   ],

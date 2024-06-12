@@ -4,10 +4,11 @@ const Doctor = require("../models/Doctor");
 const axios = require("axios");
 const User = require("../models/User");
 
-generateQuesForFirstStage = async (idQues, typeQues) => {
+generateQues = async (idQues, userRes = "", typeQues = "ar") => {
   try {
-    const res = await axios.get(
-      `${process.env.AI_SERVER_BASE_URL}generateQuesForFirstStage/${typeQues}/${idQues}`,
+    const res = await axios.post(
+      `${process.env.AI_SERVER_BASE_URL}generateQues/${typeQues}/${idQues}`,
+      { userRes },
       { headers: { Authorization: `Bearer ${process.env.API_KEY}` } }
     );
     const result = res.data;
@@ -60,11 +61,12 @@ createSession = async (req, res) => {
           doctorId: "" + doctorId,
           typeQues,
           progress: 2.5,
+          nextForIdQue: true,
           order: sessions.length + 1,
         });
         try {
-          const tempMessage = await generateQuesForFirstStage(1, typeQues);
-          if (!tempMessage)
+          const { type, result } = await generateQues(1, "", typeQues);
+          if (!result)
             return res.status(500).json({
               error: true,
               message: "We can't generate first question!!",
@@ -72,10 +74,12 @@ createSession = async (req, res) => {
           const session = await newSession.save();
           const user = await User.findOne({ _id: userId });
           const message =
-            tempMessage.split("_")[0] +
-            ` ${user.name} ` +
-            tempMessage.split("_")[1];
-          session.messages.push({ sender: "ai", content: message });
+            result.split("_")[0] + ` ${user.name} ` + result.split("_")[1];
+          session.messages.push({
+            sender: "ai-base",
+            content: message,
+            idQue: 1,
+          });
           await Session.findOneAndUpdate(
             { _id: session._id },
             { $set: { messages: session.messages } },
@@ -151,35 +155,73 @@ addMessage = async (req, res) => {
               message: "This session is not for you!!",
             });
           }
-          session.messages.push({ sender: "user", content: message });
-          const prog = session.messages.filter(
-            (message) => message.sender === "ai"
+          var progress = session.messages.filter(
+            (message) => message.sender === "ai-base"
           ).length;
-
-          const question = await generateQuesForFirstStage(
-            prog + 1,
+          var nextForIdQue = session.nextForIdQue;
+          const { type, result } = await generateQues(
+            progress + 1,
+            nextForIdQue ? message : "",
             session.typeQues
           );
-          if (!question)
+
+          session.messages.push({
+            sender: "user",
+            content: message,
+            idQue: progress,
+          });
+          if (type === "unknown") {
             return res.status(500).json({
               error: true,
               message: "We can't generate next question!!",
             });
-          session.messages.push({ sender: "ai", content: question });
+          } else if (type === "sent") {
+            nextForIdQue = true;
+
+            session.messages.push({
+              sender: "ai",
+              content: result,
+              idQue: progress,
+            });
+            progress += 1;
+            const newRes = await generateQues(progress, "", session.typeQues);
+            session.messages.push({
+              sender: "ai-base",
+              content: newRes.result,
+              idQue: progress,
+            });
+          } else if (type === "que") {
+            nextForIdQue = true;
+            session.messages.push({
+              sender: "ai-base",
+              content: result,
+              idQue: progress + 1,
+            });
+            progress += 1;
+          } else if (type === "seq") {
+            nextForIdQue = false;
+            session.messages.push({
+              sender: "ai",
+              content: result,
+              idQue: progress,
+            });
+          }
 
           const data = await Session.findOneAndUpdate(
             { _id: sessionId },
             {
               $set:
-                prog === 9
+                progress === 9
                   ? {
                       messages: session.messages,
-                      progress: (prog + 1) * 2.5,
+                      progress: progress * 2.5,
+                      nextForIdQue,
                       stage: 2,
                     }
                   : {
                       messages: session.messages,
-                      progress: (prog + 1) * 2.5,
+                      progress: progress * 2.5,
+                      nextForIdQue,
                     },
             },
             { new: true }
