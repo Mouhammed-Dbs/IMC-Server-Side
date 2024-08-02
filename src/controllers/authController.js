@@ -1,89 +1,60 @@
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const asyncHandler = require("express-async-handler");
 const User = require("../models/User");
+const ApiError = require("../utils/ApiError");
 
-registerUser = async (req, res) => {
-  try {
-    const { name, age, gender, email, username, password } = req.body;
+const registerUser = asyncHandler(async (req, res, next) => {
+  const { name, age, gender, email, username, password } = req.body;
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const newUser = new User({
-      name,
-      age,
-      gender,
-      email,
-      username,
-      password: hashedPassword,
-    });
-    await newUser.save();
-    const token = jwt.sign({ userId: newUser._id }, process.env.JWT_SECRET);
-    res.status(201).json({
-      error: false,
-      message: "User has registered successfully!!",
-      token,
-    });
-  } catch (error) {
-    if (error.message.includes("duplicate key"))
-      res.status(409).json({
-        error: true,
-        message: "User already exist!!",
-      });
-    else if (error.message.includes("Path"))
-      res.status(400).json({
-        error: true,
-        message: "Invalid data!!",
-      });
-    else
-      res.status(400).json({
-        error: true,
-        message: error.message,
-      });
+  if (!name || !email || !password) {
+    return next(new ApiError("Name, email, and password are required!", 400));
   }
-};
 
-loginUser = async (req, res) => {
-  try {
-    const { email, password } = req.query;
+  const hashedPassword = await bcrypt.hash(password, 10);
+  const newUser = new User({
+    name,
+    age,
+    gender,
+    email,
+    username,
+    password: hashedPassword,
+  });
 
-    const user = await User.findOne({ email });
+  await newUser.save();
+  const token = jwt.sign({ userId: newUser._id }, process.env.JWT_SECRET);
 
-    if (!user) {
-      return res.status(404).json({ error: true, message: "User not found" });
-    }
+  res.status(201).json({
+    error: false,
+    message: "User has registered successfully!",
+    token,
+  });
+});
 
-    const passwordMatch = await bcrypt.compare(password, user.password);
+const loginUser = asyncHandler(async (req, res, next) => {
+  const { email, password } = req.body;
 
-    if (!passwordMatch) {
-      return res
-        .status(401)
-        .json({ error: true, message: "Invalid credentials" });
-    }
-
-    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET);
-
-    res.status(200).json({
-      error: false,
-      message: "User has logged in successfully!",
-      token,
-    });
-  } catch (error) {
-    if (error.message.includes("duplicate key"))
-      res.status(409).json({
-        error: true,
-        message: "User already exist!!",
-      });
-    else if (error.message.includes("Path"))
-      res.status(409).json({
-        error: true,
-        message: "Invalid data!!",
-      });
-    else
-      res.status(409).json({
-        error: true,
-        message: "Error!!",
-      });
+  if (!email || !password) {
+    return next(new ApiError("Email and password are required!", 400));
   }
-};
+
+  const user = await User.findOne({ email });
+  if (!user) {
+    return next(new ApiError("User not found", 404));
+  }
+
+  const passwordMatch = await bcrypt.compare(password, user.password);
+  if (!passwordMatch) {
+    return next(new ApiError("Invalid credentials", 401));
+  }
+
+  const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET);
+
+  res.status(200).json({
+    error: false,
+    message: "User has logged in successfully!",
+    token,
+  });
+});
 
 module.exports = { registerUser, loginUser };

@@ -1,9 +1,11 @@
 const Doctor = require("../models/Doctor");
+const asyncHandler = require("express-async-handler");
+const ApiError = require("../utils/ApiError");
 
-const getDoctors = async (req, res) => {
+const getDoctors = asyncHandler(async (req, res, next) => {
   try {
     const doctors = await Doctor.find();
-    if (doctors) {
+    if (doctors.length > 0) {
       const simplifiedDoctors = doctors.map(
         ({ _id, name, description, gender, email, username }) => ({
           _id,
@@ -20,19 +22,10 @@ const getDoctors = async (req, res) => {
         data: simplifiedDoctors,
       });
     }
-    res.status(400).json({ error: true, message: "No doctors available!!" });
+    return next(new ApiError("No doctors available!", 404));
   } catch (error) {
-    if (error.message.includes("Path"))
-      res.status(409).json({
-        error: true,
-        message: "Invalid data!!",
-      });
-    else
-      res.status(409).json({
-        error: true,
-        message: "Error!!",
-      });
+    next(new ApiError("An error occurred while fetching doctors!", 500));
   }
-};
+});
 
 module.exports = { getDoctors };

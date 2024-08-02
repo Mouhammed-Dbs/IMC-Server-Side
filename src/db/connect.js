@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 
 function connect() {
-  mongoose.connect(process.env.PROD_DB_URL);
+  mongoose.connect(process.env.DEV_DB_URL);
   mongoose.connection.on("error", (err) => {
     console.log("Error connect to DB");
   });
