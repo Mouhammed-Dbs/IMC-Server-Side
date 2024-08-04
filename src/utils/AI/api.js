@@ -34,3 +34,18 @@ exports.predictDisorderForFirstStage = async (userAns) => {
   }
   return null;
 };
+
+exports.extractSymptoms = async (userAns, idDisorder) => {
+  try {
+    const response = await axios.post(
+      `${process.env.DEV_AI_SERVER_BASE_URL}extractSymptoms?idDisorder=${idDisorder}`,
+      { userAns },
+      { headers: { Authorization: `Bearer ${process.env.API_KEY}` } }
+    );
+    const result = response.data;
+    if (!result.error) return result.data;
+  } catch (err) {
+    console.error("Error extract symptoms", err);
+  }
+  return null;
+};

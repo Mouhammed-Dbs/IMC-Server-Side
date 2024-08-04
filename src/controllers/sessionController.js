@@ -7,6 +7,7 @@ const ApiError = require("../utils/ApiError");
 const {
   generateQues,
   predictDisorderForFirstStage,
+  extractSymptoms,
 } = require("../utils/AI/api");
 
 const verifyToken = (token) => {
@@ -172,6 +173,13 @@ const addMessage = asyncHandler(async (req, res, next) => {
       limits.thirdStageLimit[session.currentDisorder]
   ) {
     session.stage = 4;
+    const userAns = session.messages
+      .filter(
+        (msg) => msg.sender === "user" && msg.idQue > limits.firstStageLimit
+      )
+      .map((item) => item.content);
+    const symptoms = await extractSymptoms(userAns, session.currentDisorder);
+    console.log(symptoms);
   }
   session.nextForIdQue = nextForIdQue;
   await session.save();
