@@ -10,6 +10,7 @@ const sessionSchema = new Schema({
   nextForIdQue: { type: Boolean, required: true, default: false },
   typeQues: { type: String, default: "ar" },
   stage: { type: Number, required: true, default: 1 },
+  currentDisorder: { type: Number, required: true, default: -1 },
   messages: [
     {
       sender: { type: String, enum: ["user", "ai", "ai-base"], required: true },

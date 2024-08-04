@@ -1,25 +1,13 @@
 const jwt = require("jsonwebtoken");
-const axios = require("axios");
 const asyncHandler = require("express-async-handler");
 const Session = require("../models/Session");
 const Doctor = require("../models/Doctor");
 const User = require("../models/User");
 const ApiError = require("../utils/ApiError");
-
-const generateQues = async (idQues, userRes = "", typeQues = "ar") => {
-  try {
-    const response = await axios.post(
-      `${process.env.DEV_AI_SERVER_BASE_URL}generateQues/${typeQues}/${idQues}`,
-      { userRes },
-      { headers: { Authorization: `Bearer ${process.env.API_KEY}` } }
-    );
-    const result = response.data;
-    if (!result.error) return result.data;
-  } catch (err) {
-    console.error("Error generating question:", err);
-  }
-  return null;
-};
+const {
+  generateQues,
+  predictDisorderForFirstStage,
+} = require("../utils/AI/api");
 
 const verifyToken = (token) => {
   return new Promise((resolve, reject) => {
@@ -67,7 +55,7 @@ const createSession = asyncHandler(async (req, res, next) => {
       order: sessions.length + 1,
     });
 
-    const { type, result } = await generateQues(1, "", typeQues);
+    const { type, result } = await generateQues(1, "", "1", typeQues);
     if (!result) {
       return next(new ApiError("We can't generate first question!!", 500));
     }
@@ -114,24 +102,33 @@ const addMessage = asyncHandler(async (req, res, next) => {
   let progress = session.messages.filter(
     (msg) => msg.sender === "ai-base"
   ).length;
-  let nextForIdQue = session.nextForIdQue;
-  const { type, result } = await generateQues(
-    progress + 1,
-    nextForIdQue ? message : "",
-    session.typeQues
-  );
+
+  const numQue = progress;
 
   session.messages.push({ sender: "user", content: message, idQue: progress });
 
-  if (type === "unknown") {
-    return next(new ApiError("We can't generate next question!!", 500));
-  }
+  let nextForIdQue = session.nextForIdQue;
 
-  if (type === "sent") {
+  const { type, result, limits } = await generateQues(
+    progress + 1,
+    nextForIdQue ? message : "",
+    session.currentDisorder < 0 ? "1" : session.currentDisorder,
+    session.typeQues
+  );
+
+  if (type === "unknown") {
+    await session.save();
+    // return next(new ApiError("We can't generate next question!!", 500));
+  } else if (type === "sent") {
     nextForIdQue = true;
     session.messages.push({ sender: "ai", content: result, idQue: progress });
     progress += 1;
-    const newRes = await generateQues(progress, "", session.typeQues);
+    const newRes = await generateQues(
+      progress,
+      "",
+      session.currentDisorder < 0 ? "1" : session.currentDisorder,
+      session.typeQues
+    );
     session.messages.push({
       sender: "ai-base",
       content: newRes.result,
@@ -150,11 +147,62 @@ const addMessage = asyncHandler(async (req, res, next) => {
     session.messages.push({ sender: "ai", content: result, idQue: progress });
   }
 
-  session.progress = progress * 2.5;
-  if (progress === 9) session.stage = 2;
+  if (numQue === limits.firstStageLimit && type != "seq") {
+    const userAns = session.messages
+      .filter((msg) => msg.sender === "user")
+      .map((item) => item.content);
+    const predictRes = await predictDisorderForFirstStage(userAns);
+    session.currentDisorder = predictRes.disorderLabel;
+    if (predictRes.disorderLabel == 0) {
+      session.finished = true;
+      session.progress = 100;
+      session.stage = 1;
+    } else {
+      session.stage = 2;
+    }
+  } else if (
+    numQue ==
+    limits.firstStageLimit + limits.secondStageLimit[session.currentDisorder]
+  ) {
+    session.stage = 3;
+  } else if (
+    numQue ==
+    limits.firstStageLimit +
+      limits.secondStageLimit[session.currentDisorder] +
+      limits.thirdStageLimit[session.currentDisorder]
+  ) {
+    session.stage = 4;
+  }
   session.nextForIdQue = nextForIdQue;
   await session.save();
 
+  if (session.stage == 1)
+    session.progress =
+      Math.round(((progress * 25) / limits.firstStageLimit) * 10) / 10;
+  else if (session.stage == 2)
+    session.progress =
+      Math.round(
+        ((progress * 25 * session.stage) /
+          (limits.firstStageLimit +
+            limits.secondStageLimit[session.currentDisorder])) *
+          10
+      ) / 10;
+  else if (session.stage == 3)
+    session.progress =
+      Math.round(
+        ((progress * 25 * session.stage) /
+          (limits.firstStageLimit +
+            limits.secondStageLimit[session.currentDisorder] +
+            limits.thirdStageLimit[session.currentDisorder])) *
+          10
+      ) / 10;
+  else console.log("Progress Survey");
+  console.log({
+    stage: session.stage,
+    progress: session.progress,
+    finished: session.finished,
+    numQue,
+  });
   res.status(201).json({
     error: false,
     message: "Message added",
