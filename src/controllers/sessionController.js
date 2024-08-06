@@ -118,23 +118,48 @@ const addMessage = asyncHandler(async (req, res, next) => {
   );
 
   if (type === "unknown") {
+    if (session.stage == 3) session.stage = 4;
     await session.save();
+    return res.status(201).json({
+      error: false,
+      message: "Message added",
+      data: {
+        stage: session.stage,
+        progress: session.progress,
+        finished: session.finished,
+        messages: session.messages,
+        extractedSymptoms: session.extractedSymptoms,
+        currentDisorder: session.currentDisorder,
+      },
+    });
     // return next(new ApiError("We can't generate next question!!", 500));
   } else if (type === "sent") {
     nextForIdQue = true;
     session.messages.push({ sender: "ai", content: result, idQue: progress });
     progress += 1;
-    const newRes = await generateQues(
-      progress,
-      "",
-      session.currentDisorder < 0 ? "1" : session.currentDisorder,
-      session.typeQues
-    );
-    session.messages.push({
-      sender: "ai-base",
-      content: newRes.result,
-      idQue: progress,
-    });
+
+    if (
+      progress <=
+      limits.firstStageLimit +
+        limits.secondStageLimit[
+          session.currentDisorder < 0 ? 1 : session.currentDisorder
+        ] +
+        limits.thirdStageLimit[
+          session.currentDisorder < 0 ? 1 : session.currentDisorder
+        ]
+    ) {
+      const newRes = await generateQues(
+        progress,
+        "",
+        session.currentDisorder < 0 ? "1" : session.currentDisorder,
+        session.typeQues
+      );
+      session.messages.push({
+        sender: "ai-base",
+        content: newRes.result,
+        idQue: progress,
+      });
+    }
   } else if (type === "que") {
     nextForIdQue = true;
     session.messages.push({
@@ -163,14 +188,17 @@ const addMessage = asyncHandler(async (req, res, next) => {
     }
   } else if (
     numQue ==
-    limits.firstStageLimit + limits.secondStageLimit[session.currentDisorder]
+      limits.firstStageLimit +
+        limits.secondStageLimit[session.currentDisorder] &&
+    type != "seq"
   ) {
     session.stage = 3;
   } else if (
     numQue ==
-    limits.firstStageLimit +
-      limits.secondStageLimit[session.currentDisorder] +
-      limits.thirdStageLimit[session.currentDisorder]
+      limits.firstStageLimit +
+        limits.secondStageLimit[session.currentDisorder] +
+        limits.thirdStageLimit[session.currentDisorder] &&
+    type != "seq"
   ) {
     session.stage = 4;
     const userAns = session.messages
@@ -178,11 +206,18 @@ const addMessage = asyncHandler(async (req, res, next) => {
         (msg) => msg.sender === "user" && msg.idQue > limits.firstStageLimit
       )
       .map((item) => item.content);
-    const symptoms = await extractSymptoms(userAns, session.currentDisorder);
-    console.log(symptoms);
+    const extractedSymptomsRes = await extractSymptoms(
+      userAns,
+      session.currentDisorder
+    );
+    const mySymptoms = new Array();
+    extractedSymptomsRes.symptoms.map((symptom) =>
+      mySymptoms.push({ name: symptom, selected: -1 })
+    );
+    session.extractedSymptoms = mySymptoms;
+    console.log(extractedSymptomsRes.symptoms);
   }
   session.nextForIdQue = nextForIdQue;
-  await session.save();
 
   if (session.stage == 1)
     session.progress =
@@ -204,12 +239,26 @@ const addMessage = asyncHandler(async (req, res, next) => {
             limits.thirdStageLimit[session.currentDisorder])) *
           10
       ) / 10;
-  else console.log("Progress Survey");
+  // else {
+  //   session.progress =
+  //     Math.round(
+  //       ((progress * 25 * session.stage) /
+  //         (limits.firstStageLimit +
+  //           limits.secondStageLimit[session.currentDisorder] +
+  //           limits.thirdStageLimit[session.currentDisorder] +
+  //           session.extractedSymptoms.length)) *
+  //         10
+  //     ) / 10;
+  // }
+  await session.save();
   console.log({
     stage: session.stage,
     progress: session.progress,
     finished: session.finished,
     numQue,
+    type,
+    extractSymptoms: session.extractedSymptoms,
+    currentDisorder: session.currentDisorder,
   });
   res.status(201).json({
     error: false,
@@ -219,6 +268,8 @@ const addMessage = asyncHandler(async (req, res, next) => {
       progress: session.progress,
       finished: session.finished,
       messages: session.messages,
+      extractedSymptoms: session.extractedSymptoms,
+      currentDisorder: session.currentDisorder,
     },
   });
 });
@@ -257,6 +308,8 @@ const getSession = asyncHandler(async (req, res, next) => {
       finished: session.finished,
       startTime: session.startTime,
       messages: session.messages,
+      extractedSymptoms: session.extractedSymptoms,
+      currentDisorder: session.currentDisorder,
     },
   });
 });

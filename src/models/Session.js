@@ -11,6 +11,13 @@ const sessionSchema = new Schema({
   typeQues: { type: String, default: "ar" },
   stage: { type: Number, required: true, default: 1 },
   currentDisorder: { type: Number, required: true, default: -1 },
+  extractedSymptoms: [
+    {
+      name: { type: String, required: true },
+      selected: { type: Number, required: true },
+      association: { type: Number, required: true, default: 0 },
+    },
+  ],
   messages: [
     {
       sender: { type: String, enum: ["user", "ai", "ai-base"], required: true },
