@@ -14,7 +14,9 @@ const sessionSchema = new Schema({
   extractedSymptoms: [
     {
       name: { type: String, required: true },
+      label: { type: Number, required: true, default: 0 },
       selected: { type: Number, required: true },
+      associationByAI: { type: Number, required: true, default: 0 },
       association: { type: Number, required: true, default: 0 },
     },
   ],

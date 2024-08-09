@@ -118,7 +118,27 @@ const addMessage = asyncHandler(async (req, res, next) => {
   );
 
   if (type === "unknown") {
-    if (session.stage == 3) session.stage = 4;
+    session.stage = 4;
+    const userAns = session.messages
+      .filter(
+        (msg) => msg.sender === "user" && msg.idQue > limits.firstStageLimit
+      )
+      .map((item) => item.content);
+    const extractedSymptomsRes = await extractSymptoms(
+      userAns,
+      session.currentDisorder
+    );
+    const mySymptoms = new Array();
+    extractedSymptomsRes.symptoms.map((symptom) =>
+      mySymptoms.push({
+        name: symptom.name,
+        label: symptom.label,
+        selected: -1,
+        association: 0,
+        associationByAI: symptom.prob,
+      })
+    );
+    session.extractedSymptoms = mySymptoms;
     await session.save();
     return res.status(201).json({
       error: false,
@@ -183,6 +203,7 @@ const addMessage = asyncHandler(async (req, res, next) => {
       session.finished = true;
       session.progress = 100;
       session.stage = 1;
+      session.endDate = new Date().toISOString();
     } else {
       session.stage = 2;
     }
@@ -212,14 +233,21 @@ const addMessage = asyncHandler(async (req, res, next) => {
     );
     const mySymptoms = new Array();
     extractedSymptomsRes.symptoms.map((symptom) =>
-      mySymptoms.push({ name: symptom, selected: -1 })
+      mySymptoms.push({
+        name: symptom.name,
+        label: symptom.label,
+        selected: -1,
+        association: 0,
+        associationByAI: symptom.prob,
+      })
     );
     session.extractedSymptoms = mySymptoms;
-    console.log(extractedSymptomsRes.symptoms);
+    console.log(mySymptoms);
+    console.log(extractSymptoms);
   }
   session.nextForIdQue = nextForIdQue;
 
-  if (session.stage == 1)
+  if (session.stage == 1 && session.finished == false)
     session.progress =
       Math.round(((progress * 25) / limits.firstStageLimit) * 10) / 10;
   else if (session.stage == 2)
@@ -239,17 +267,7 @@ const addMessage = asyncHandler(async (req, res, next) => {
             limits.thirdStageLimit[session.currentDisorder])) *
           10
       ) / 10;
-  // else {
-  //   session.progress =
-  //     Math.round(
-  //       ((progress * 25 * session.stage) /
-  //         (limits.firstStageLimit +
-  //           limits.secondStageLimit[session.currentDisorder] +
-  //           limits.thirdStageLimit[session.currentDisorder] +
-  //           session.extractedSymptoms.length)) *
-  //         10
-  //     ) / 10;
-  // }
+
   await session.save();
   console.log({
     stage: session.stage,
@@ -272,6 +290,67 @@ const addMessage = asyncHandler(async (req, res, next) => {
       currentDisorder: session.currentDisorder,
     },
   });
+});
+
+const updateAssociationSymptomsByUser = asyncHandler(async (req, res, next) => {
+  const { sessionId } = req.params;
+  const { symptoms } = req.body; // Expecting [{label:2, association:0.6}, {label:7, association:0.2}]
+
+  // Validate input
+  if (!sessionId) {
+    return next(new ApiError("Session ID is required", 400));
+  }
+
+  const token = req.headers.authorization.split(" ")[1];
+  const decoded = await verifyToken(token).catch(next);
+  const userId = decoded.userId;
+
+  const session = await Session.findById(sessionId);
+  if (!session || session.userId.toString() !== userId) {
+    return next(
+      new ApiError(
+        session ? "This session is not for you!" : "Session Not Found!!",
+        401
+      )
+    );
+  }
+
+  if (!symptoms || !Array.isArray(symptoms)) {
+    return next(new ApiError("Symptoms data must be an array", 400));
+  }
+
+  // Iterate over the symptoms and update each association in the array
+  try {
+    for (let symptom of symptoms) {
+      const result = await Session.updateOne(
+        { _id: sessionId, "extractedSymptoms.label": symptom.label },
+        { $set: { "extractedSymptoms.$.association": symptom.association } }
+      );
+
+      if (result.nModified === 0) {
+        // No matching document found, throw an error
+        return next(
+          new ApiError(
+            `No matching symptom found for label: ${symptom.label}`,
+            404
+          )
+        );
+      }
+    }
+    session.finished = true;
+    session.endDate = new Date().toISOString();
+    session.progress = 100;
+    session.save();
+    return res.status(200).json({
+      error: false,
+      msg: "Symptoms association updated successfully",
+      data: {
+        finished: session.finished,
+      },
+    });
+  } catch (error) {
+    return next(new ApiError("An error occurred while updating symptoms", 500));
+  }
 });
 
 const getSession = asyncHandler(async (req, res, next) => {
@@ -333,7 +412,7 @@ const getUserSessions = asyncHandler(async (req, res, next) => {
         order: session.order,
         doctorName: doctor.name,
         statusFinished: session.finished,
-        progress: session.progress,
+        stage: session.stage,
         creationDate: session.startDate,
         finishingDate: session.endDate,
       };
@@ -347,4 +426,10 @@ const getUserSessions = asyncHandler(async (req, res, next) => {
   });
 });
 
-module.exports = { createSession, addMessage, getSession, getUserSessions };
+module.exports = {
+  createSession,
+  addMessage,
+  updateAssociationSymptomsByUser,
+  getSession,
+  getUserSessions,
+};
