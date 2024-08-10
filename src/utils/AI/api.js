@@ -49,3 +49,17 @@ exports.extractSymptoms = async (userAns, idDisorder) => {
   }
   return null;
 };
+
+exports.getLimits = async () => {
+  try {
+    const response = await axios.get(
+      `${process.env.DEV_AI_SERVER_BASE_URL}stageLimits`,
+      { headers: { Authorization: `Bearer ${process.env.API_KEY}` } }
+    );
+    const result = response.data;
+    if (!result.error) return result.data;
+  } catch (err) {
+    console.error("Error get stage limits", err);
+  }
+  return null;
+};
