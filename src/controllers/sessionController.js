@@ -100,6 +100,7 @@ const handleGeneratedQuestion = async (
 
 const handleUnknownType = async (session, limits) => {
   session.stage = 4;
+
   const userAns = session.messages
     .filter(
       (msg) => msg.sender === "user" && msg.idQue > limits.firstStageLimit
@@ -126,7 +127,6 @@ const handleSentType = async (session, result, progress, limits) => {
     idQue: progress,
   });
   progress += 1;
-
   if (progress <= getMaxProgressLimit(limits, session.currentDisorder)) {
     session.currentDisorder = await predictDisorder(
       extractUserAnswers(session.messages)
@@ -148,8 +148,8 @@ const handleSentType = async (session, result, progress, limits) => {
 const getMaxProgressLimit = (limits, currentDisorder) => {
   return (
     limits.firstStageLimit +
-    limits.secondStageLimit[currentDisorder] +
-    limits.thirdStageLimit[currentDisorder]
+    limits.secondStageLimit[currentDisorder < 0 ? "1" : currentDisorder] +
+    limits.thirdStageLimit[currentDisorder < 0 ? "1" : currentDisorder]
   );
 };
 
@@ -174,7 +174,9 @@ const updateProgress = (session, progress, limits) => {
       session.progress = calculateProgress(
         progress,
         limits.firstStageLimit +
-          limits.secondStageLimit[session.currentDisorder],
+          limits.secondStageLimit[
+            session.currentDisorder < 0 ? 1 : session.currentDisorder
+          ],
         session.stage
       );
       break;
@@ -299,6 +301,10 @@ const addMessage = asyncHandler(async (req, res, next) => {
       session.typeQues
     );
 
+    await handleGeneratedQuestion(session, type, result, progress, limits);
+    session.nextForIdQue = shouldProceedToNextQue(type);
+    if (session.stage < 4) updateProgress(session, progress, limits);
+
     // تحديث المرحلة بناءً على عدد الأسئلة
     if (progress === limits.firstStageLimit && type !== "seq") {
       const predictRes = await predictDisorderForFirstStage(userAns);
@@ -315,7 +321,9 @@ const addMessage = asyncHandler(async (req, res, next) => {
     } else if (
       progress ===
         limits.firstStageLimit +
-          limits.secondStageLimit[session.currentDisorder] &&
+          limits.secondStageLimit[
+            session.currentDisorder < 0 ? "1" : session.currentDisorder
+          ] &&
       type !== "seq"
     ) {
       session.stage = 3;
@@ -348,11 +356,6 @@ const addMessage = asyncHandler(async (req, res, next) => {
 
       session.extractedSymptoms = mySymptoms;
     }
-
-    await handleGeneratedQuestion(session, type, result, progress, limits);
-    session.nextForIdQue = shouldProceedToNextQue(type);
-    if (session.stage < 4) updateProgress(session, progress, limits);
-
     await session.save();
     res.status(201).json(createResponseObjectForAddMessage(session));
   } catch (error) {
