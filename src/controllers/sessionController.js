@@ -192,6 +192,66 @@ const updateProgress = (session, progress, limits) => {
   }
 };
 
+async function updateSessionBasedOnProgress(
+  session,
+  progress,
+  type,
+  userAns,
+  limits
+) {
+  if (progress === limits.firstStageLimit && type !== "seq") {
+    const predictRes = await predictDisorderForFirstStage(userAns);
+    session.currentDisorder = predictRes.disorderLabel;
+
+    if (predictRes.disorderLabel === 0) {
+      session.finished = true;
+      session.progress = 100;
+      session.stage = 1;
+      session.endDate = new Date().toISOString();
+    } else {
+      session.stage = 2;
+    }
+  } else if (
+    progress ===
+      limits.firstStageLimit +
+        limits.secondStageLimit[
+          session.currentDisorder < 0 ? "1" : session.currentDisorder
+        ] &&
+    type !== "seq"
+  ) {
+    session.stage = 3;
+  } else if (
+    progress ===
+      limits.firstStageLimit +
+        limits.secondStageLimit[session.currentDisorder] +
+        limits.thirdStageLimit[session.currentDisorder] &&
+    type !== "seq"
+  ) {
+    session.stage = 4;
+
+    const symptomsAfterFirstStage = session.messages
+      .filter(
+        (msg) => msg.sender === "user" && msg.idQue > limits.firstStageLimit
+      )
+      .map((item) => item.content);
+
+    const extractedSymptomsRes = await extractSymptoms(
+      symptomsAfterFirstStage,
+      session.currentDisorder
+    );
+
+    const mySymptoms = extractedSymptomsRes.symptoms.map((symptom) => ({
+      name: symptom.name,
+      label: symptom.label,
+      selected: -1,
+      association: 0,
+      associationByAI: symptom.prob,
+    }));
+
+    session.extractedSymptoms = mySymptoms;
+  }
+}
+
 const createResponseObjectForAddMessage = (session) => {
   return {
     error: false,
@@ -303,59 +363,17 @@ const addMessage = asyncHandler(async (req, res, next) => {
 
     await handleGeneratedQuestion(session, type, result, progress, limits);
     session.nextForIdQue = shouldProceedToNextQue(type);
+
     if (session.stage < 4) updateProgress(session, progress, limits);
 
-    // تحديث المرحلة بناءً على عدد الأسئلة
-    if (progress === limits.firstStageLimit && type !== "seq") {
-      const predictRes = await predictDisorderForFirstStage(userAns);
-      session.currentDisorder = predictRes.disorderLabel;
+    await updateSessionBasedOnProgress(
+      session,
+      progress,
+      type,
+      userAns,
+      limits
+    );
 
-      if (predictRes.disorderLabel === 0) {
-        session.finished = true;
-        session.progress = 100;
-        session.stage = 1;
-        session.endDate = new Date().toISOString();
-      } else {
-        session.stage = 2;
-      }
-    } else if (
-      progress ===
-        limits.firstStageLimit +
-          limits.secondStageLimit[
-            session.currentDisorder < 0 ? "1" : session.currentDisorder
-          ] &&
-      type !== "seq"
-    ) {
-      session.stage = 3;
-    } else if (
-      progress ===
-        limits.firstStageLimit +
-          limits.secondStageLimit[session.currentDisorder] +
-          limits.thirdStageLimit[session.currentDisorder] &&
-      type !== "seq"
-    ) {
-      session.stage = 4;
-
-      const symptomsAfterFirstStage = session.messages
-        .filter(
-          (msg) => msg.sender === "user" && msg.idQue > limits.firstStageLimit
-        )
-        .map((item) => item.content);
-
-      const extractedSymptomsRes = await extractSymptoms(
-        symptomsAfterFirstStage,
-        session.currentDisorder
-      );
-      const mySymptoms = extractedSymptomsRes.symptoms.map((symptom) => ({
-        name: symptom.name,
-        label: symptom.label,
-        selected: -1,
-        association: 0,
-        associationByAI: symptom.prob,
-      }));
-
-      session.extractedSymptoms = mySymptoms;
-    }
     await session.save();
     res.status(201).json(createResponseObjectForAddMessage(session));
   } catch (error) {
